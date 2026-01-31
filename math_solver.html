@@ -1,0 +1,209 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Math Solver</title>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      background: #0f172a;
+      color: #e5e7eb;
+      margin: 0;
+      padding: 20px;
+    }
+    h1 {
+      text-align: center;
+      color: #38bdf8;
+    }
+    .card {
+      background: #020617;
+      border-radius: 12px;
+      padding: 20px;
+      max-width: 700px;
+      margin: 20px auto;
+      box-shadow: 0 10px 30px rgba(0,0,0,0.4);
+    }
+    label {
+      display: block;
+      margin-top: 15px;
+    }
+    input {
+      width: 100%;
+      padding: 10px;
+      margin-top: 5px;
+      border-radius: 8px;
+      border: none;
+      background: #1e293b;
+      color: white;
+    }
+    button {
+      margin-top: 20px;
+      width: 100%;
+      padding: 12px;
+      border-radius: 10px;
+      border: none;
+      background: #38bdf8;
+      font-weight: bold;
+      cursor: pointer;
+    }
+    button:hover {
+      background: #0ea5e9;
+    }
+    ul {
+      padding-left: 20px;
+    }
+    .answer {
+      font-size: 1.5em;
+      color: #22c55e;
+      margin-bottom: 10px;
+    }
+    .output-placeholder {
+      color: #64748b;
+    }
+  </style>
+</head>
+<body>
+
+<h1>AI‑Style Math Solver</h1>
+
+<div class="card">
+  <form id="solver-form">
+    <label>Expression (example: 2x + 3y^2)</label>
+    <input id="expression" placeholder="Enter math expression" />
+
+    <label>x value (optional)</label>
+    <input id="var-x" type="number" step="any" />
+
+    <label>y value (optional)</label>
+    <input id="var-y" type="number" step="any" />
+
+    <button type="submit">Solve</button>
+  </form>
+</div>
+
+<div class="card empty" id="output-card">
+  <div class="output-placeholder">Result will appear here</div>
+  <div class="output-content" hidden>
+    <div class="answer">Answer: <span id="final-answer"></span></div>
+    <ul id="steps-list"></ul>
+  </div>
+</div>
+
+<script>
+const form = document.getElementById("solver-form");
+const expressionInput = document.getElementById("expression");
+const varXInput = document.getElementById("var-x");
+const varYInput = document.getElementById("var-y");
+const outputCard = document.getElementById("output-card");
+const finalAnswerEl = document.getElementById("final-answer");
+const stepsListEl = document.getElementById("steps-list");
+const outputContentEl = outputCard.querySelector(".output-content");
+const outputPlaceholderEl = outputCard.querySelector(".output-placeholder");
+
+const OPERATORS = {
+  "+": { precedence: 1, associativity: "L" },
+  "-": { precedence: 1, associativity: "L" },
+  "*": { precedence: 2, associativity: "L" },
+  "/": { precedence: 2, associativity: "L" },
+  "^": { precedence: 3, associativity: "R" },
+};
+
+function tokenize(expr) {
+  const tokens = [];
+  let i = 0;
+  while (i < expr.length) {
+    const ch = expr[i];
+    if (" \t\n".includes(ch)) { i++; continue; }
+    if (/[0-9.]/.test(ch)) {
+      let num = ch; i++;
+      while (i < expr.length && /[0-9.]/.test(expr[i])) num += expr[i++];
+      tokens.push({ type: "number", value: parseFloat(num) }); continue;
+    }
+    if (/[a-zA-Z]/.test(ch)) {
+      let name = ch; i++;
+      while (i < expr.length && /[a-zA-Z]/.test(expr[i])) name += expr[i++];
+      tokens.push({ type: "identifier", value: name.toLowerCase() }); continue;
+    }
+    if (ch in OPERATORS) { tokens.push({ type: "operator", value: ch }); i++; continue; }
+    if (ch === "(" || ch === ")") { tokens.push({ type: "paren", value: ch }); i++; continue; }
+    throw new Error("Unexpected character: " + ch);
+  }
+  return tokens;
+}
+
+function toRPN(tokens) {
+  const output = [], stack = [];
+  for (const t of tokens) {
+    if (t.type === "number" || t.type === "identifier") output.push(t);
+    else if (t.type === "operator") {
+      while (stack.length) {
+        const top = stack[stack.length-1];
+        if (top.type !== "operator") break;
+        const o1 = OPERATORS[t.value], o2 = OPERATORS[top.value];
+        if ((o1.associativity==="L" && o1.precedence<=o2.precedence) ||
+            (o1.associativity==="R" && o1.precedence<o2.precedence))
+          output.push(stack.pop());
+        else break;
+      }
+      stack.push(t);
+    } else if (t.value==="(") stack.push(t);
+    else {
+      while (stack.length && stack[stack.length-1].value!=="(")
+        output.push(stack.pop());
+      stack.pop();
+    }
+  }
+  return output.concat(stack);
+}
+
+function evaluateRPN(rpn, scope) {
+  const stack=[], steps=[];
+  for (const t of rpn) {
+    if (t.type==="number") stack.push(t.value);
+    else if (t.type==="identifier") {
+      if (!(t.value in scope)) throw new Error("Unknown variable: "+t.value);
+      stack.push(scope[t.value]);
+      steps.push("Substitute "+t.value+" = "+scope[t.value]);
+    } else {
+      const b=stack.pop(), a=stack.pop();
+      let r;
+      if (t.value==="+") r=a+b;
+      if (t.value==="−"||t.value==="-") r=a-b;
+      if (t.value==="*") r=a*b;
+      if (t.value==="/") r=a/b;
+      if (t.value==="^") r=Math.pow(a,b);
+      steps.push(a+" "+t.value+" "+b+" = "+r);
+      stack.push(r);
+    }
+  }
+  return {value: stack[0], steps};
+}
+
+form.addEventListener("submit", e => {
+  e.preventDefault();
+  try {
+    const scope = {};
+    if (varXInput.value) scope.x = parseFloat(varXInput.value);
+    if (varYInput.value) scope.y = parseFloat(varYInput.value);
+    const rpn = toRPN(tokenize(expressionInput.value));
+    const res = evaluateRPN(rpn, scope);
+    outputCard.classList.remove("empty");
+    outputPlaceholderEl.hidden = true;
+    outputContentEl.hidden = false;
+    finalAnswerEl.textContent = res.value;
+    stepsListEl.innerHTML = "";
+    res.steps.forEach(s => {
+      const li=document.createElement("li");
+      li.textContent=s;
+      stepsListEl.appendChild(li);
+    });
+  } catch (err) {
+    finalAnswerEl.textContent = "Error";
+    stepsListEl.innerHTML = "<li>"+err.message+"</li>";
+  }
+});
+</script>
+
+</body>
+</html>
